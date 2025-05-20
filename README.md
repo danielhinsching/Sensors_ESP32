@@ -93,31 +93,59 @@ Exemplo de payload JSON publicado via MQTT:
 
 ## 🐧 Como usar PlatformIO no Linux com VS Code
 
-Se você está usando Linux e quer programar com ESP32 no VS Code usando o **PlatformIO**, siga o passo a passo abaixo. Ele foi feito pensando em quem **já usa VS Code, mas nunca usou o PlatformIO**.
+Se você está usando Linux e quer programar com ESP32 no VS Code usando o **PlatformIO**, siga o passo a passo abaixo. Ele cobre tanto o caso comum onde o PlatformIO **não aparece no Marketplace**, quanto o caminho padrão.
 
 ---
 
-### ✅ 1. Instale o PlatformIO via Marketplace do VS Code
-
-Agora o PlatformIO está disponível normalmente no Marketplace:
+### ✅ 1. Tente instalar pelo Marketplace (caso já apareça)
 
 1. Abra o **VS Code**
 2. Vá até a aba de **Extensões (Ctrl+Shift+X)**
 3. Pesquise por **PlatformIO IDE**
-4. Clique em **Instalar**
+4. Se aparecer, clique em **Instalar**
+
+Se deu certo, pule direto para a seção [Crie um novo projeto PlatformIO](#2-crie-um-novo-projeto-platformio).
 
 ---
 
-### 🧱 2. Crie um novo projeto PlatformIO
+### ❌ 1.1 Se NÃO aparecer o PlatformIO no Marketplace
 
-1. Após instalar, clique no ícone do **formigueiro** no menu lateral esquerdo (ícone do PlatformIO).
-2. Clique em **“New Project”** ou "Create New Project".
+#### 📦 Instale via pipx (mais seguro que pip)
+
+O `pip` puro pode causar erros com dependências. O recomendado é usar `pipx`, que isola o ambiente:
+
+#### 1. Instale o `pipx`:
+
+```bash
+sudo apt update
+sudo apt install pipx
+pipx ensurepath
+```
+
+Reinicie o terminal.
+
+#### 2. Instale o PlatformIO via `pipx`:
+
+```bash
+pipx install platformio
+```
+
+Agora, você pode usar o `platformio` direto no terminal VS Code (ou qualquer terminal Linux).
+
+---
+
+### 📁 2. Crie um novo projeto PlatformIO
+
+1. No VS Code, vá até o menu lateral esquerdo e clique no **formigueiro** do PlatformIO.
+2. Clique em **“New Project”**
 3. Dê um nome ao projeto (ex: `fazendaiot`)
-4. Selecione a **placa ESP32 Dev Module**
-5. Escolha o **framework Arduino**
-6. Clique em **Finish**
+4. Selecione:
+   - **Placa:** `ESP32 Dev Module`
+   - **Framework:** `Arduino`
+5. Clique em **Finish**
 
-📸 *[Insira aqui um print da tela de criação do projeto]*
+![Tela de criação do projeto no PlatformIO](docs/criacao_projeto.png)
+
 
 ---
 
@@ -125,16 +153,16 @@ Agora o PlatformIO está disponível normalmente no Marketplace:
 
 Se você já tinha um arquivo `.ino` (do Arduino IDE), faça o seguinte:
 
-1. Mova o conteúdo do `.ino` para o arquivo `src/main.cpp`
-2. Caso o `.ino` já esteja na pasta `src/`, **renomeie o arquivo** para `main.cpp`
+1. Mova o conteúdo para `src/main.cpp`
+2. Ou **renomeie o arquivo `.ino` para `main.cpp`** se ele estiver dentro da pasta `src/`
 
-> ⚠️ O PlatformIO exige que o arquivo principal esteja nomeado como `main.cpp` e localizado dentro da pasta `src/`.
+> ⚠️ O PlatformIO exige que o arquivo principal esteja nomeado como `main.cpp`.
 
 ---
 
 ### ⚙️ 4. Configure a placa, porta e monitor serial
 
-Abra o arquivo `platformio.ini` e edite (ou confirme) o seguinte conteúdo:
+Abra o arquivo `platformio.ini` e edite (ou confirme) o seguinte:
 
 ```ini
 [env:esp32dev]
@@ -145,18 +173,18 @@ monitor_speed = 115200
 upload_port = /dev/ttyUSB0
 ```
 
-> 📝 A porta (`upload_port`) pode variar dependendo do seu sistema. Para descobrir, conecte o ESP32 e use `ls /dev/tty*` no terminal antes e depois.
+> 📝 A porta (`upload_port`) pode mudar. Use `ls /dev/tty*` antes e depois de conectar o ESP32.
 
 ---
 
 ### 🚀 5. Compile e envie o código
 
-Com o ESP32 conectado, você pode:
+Com o ESP32 conectado:
 
-- Clicar no **check (✔)** no menu inferior para **compilar**
-- Clicar na **seta (→)** para **enviar o código**
+- Clique no **check (✔)** para **compilar**
+- Clique na **seta (→)** para **enviar**
 
-Ou via terminal:
+Ou use:
 
 ```bash
 pio run --target upload
@@ -166,7 +194,7 @@ pio run --target upload
 
 ### 🔍 6. Monitor serial
 
-Para visualizar os dados enviados pelo ESP32:
+Para visualizar os dados do ESP32:
 
 ```bash
 pio device monitor
@@ -174,9 +202,9 @@ pio device monitor
 
 ---
 
-### 🧩 7. Rodar upload e monitor juntos
+### 🔁 7. Enviar e monitorar de uma vez
 
-Para enviar o código e já abrir o monitor serial no terminal:
+Use este comando para enviar o código e abrir o monitor serial automaticamente:
 
 ```bash
 pio run --target upload && pio device monitor
@@ -184,24 +212,23 @@ pio run --target upload && pio device monitor
 
 ---
 
-### 📌 Dicas úteis
+### 🧩 Dicas finais
 
-- O terminal padrão do PlatformIO pode não abrir automaticamente — **use o terminal do VS Code (Ctrl+`) para executar os comandos manualmente.**
-- Se você tiver problema com permissão na porta `/dev/ttyUSB0`, adicione seu usuário ao grupo `dialout`:
+- Se a porta USB der erro de permissão:
 
 ```bash
 sudo usermod -aG dialout $USER
-# Depois reinicie a máquina
+# Reinicie a máquina depois
 ```
 
-- Verifique sempre se o cabo USB está funcionando para **dados** e não apenas **energia**.
+- Se o terminal do PlatformIO não abrir, use o terminal embutido do VS Code (`Ctrl + ``).
+- Certifique-se de que o cabo USB suporta **dados**, não só **carga**.
 
 ---
 
-Agora você já pode programar ESP32 com PlatformIO no Linux usando apenas o VS Code! 🚀
+Pronto! Com esses passos, você já consegue usar PlatformIO no Linux via VS Code para programar ESP32 como um profissional! 🚀🐧
 
 
----
 
 ## 🤝 Contribua
 
