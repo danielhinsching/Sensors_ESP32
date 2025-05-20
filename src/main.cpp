@@ -1,84 +1,89 @@
-#include <Arduino.h>
 #include <WiFi.h>
-#include <PubSubClient.h>
-#include <DHT.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <WiFiManager.h>
 
-#define DHTTYPE DHT11
 #define DHTPIN 33
-DHT dht(DHTPIN, DHTTYPE);
-
+#define DHTTYPE DHT11
 const int gasAnalogPin = 39;
 const int gasDigitalPin = 4;
 const int redLed = 32;
 const int greenLed = 26;
 const int relePin = 23;
 
-WiFiClient espClient;
-PubSubClient client(espClient);
+const char* token = "Jf8Wa1TFYInsq9q9elvo";
 
 unsigned long lastMsg = 0;
-const long interval = 900000;  // 15 minutos
+const long interval = 1000;
 
-const char* mqtt_server = "mytb.fabricadesoftware.ifc.edu.br";
-const int mqtt_port = 1883;
-const char* token = "token do dispositivo criado";   // Substitua pelo token do dispositivo no ThingsBoard
-
-void setup_wifi() {
-  WiFiManager wifiManager;
-  wifiManager.autoConnect("AutoConnectAP");
-  Serial.println("WiFi conectado");
+float randomFloat(float minVal, float maxVal) {
+  return minVal + ((float)random() / (float)UINT32_MAX) * (maxVal - minVal);
 }
 
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Tentando conectar ao MQTT...");
-    if (client.connect("ESP32Client", token, NULL)) {
-      Serial.println("conectado");
-    } else {
-      Serial.print("falhou, rc=");
-      Serial.print(client.state());
-      Serial.println(" tentando novamente em 5 segundos");
-      delay(5000);
-    }
-  }
+int randomInt(int minVal, int maxVal) {
+  return minVal + random(maxVal - minVal + 1);
 }
 
 void setup() {
   Serial.begin(115200);
+
+  pinMode(gasAnalogPin, INPUT);
+  pinMode(gasDigitalPin, INPUT);
   pinMode(redLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
   pinMode(relePin, OUTPUT);
-  dht.begin();
 
-  setup_wifi();
-  client.setServer(mqtt_server, mqtt_port);
+  WiFi.mode(WIFI_STA);
+  delay(1000);
+
+  WiFiManager wm;
+  wm.setTimeout(180); // Timeout 3 minutos para configuração
+
+  if (!wm.autoConnect("ESP32_ConfigAP")) {
+    Serial.println("⚠️ Falha na conexão ou timeout expirado. Reiniciando...");
+    delay(3000);
+    ESP.restart();
+  }
+
+  Serial.println("✅ Wi-Fi conectado!");
+  Serial.println(WiFi.localIP());
+
+  randomSeed(analogRead(0)); // Inicializa o gerador de números aleatórios
 }
 
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-
   unsigned long now = millis();
   if (now - lastMsg > interval) {
     lastMsg = now;
 
-    float temp = dht.readTemperature();
-    float hum = dht.readHumidity();
-    int gasValue = analogRead(gasAnalogPin);
+    // Gerar valores aleatórios para temperatura, umidade e gás
+    float temp = randomFloat(20.0, 30.0);
+    float hum = randomFloat(30.0, 70.0);
+    int gasValue = randomInt(0, 4095);
 
-    // Formata os dados em JSON
-    String payload = "{";
-    payload += "\"temperatura\":" + String(temp) + ",";
-    payload += "\"umidade\":" + String(hum) + ",";
-    payload += "\"gas\":" + String(gasValue);
-    payload += "}";
+    String payload = "{\"temperature\":" + String(temp, 1) +
+                     ",\"humidity\":" + String(hum, 1) +
+                     ",\"gas\":" + String(gasValue) + "}";
 
-    Serial.println("Publicando: ");
+    Serial.println("Publicando via HTTPS:");
     Serial.println(payload);
 
-    client.publish("v1/devices/me/telemetry", payload.c_str());
+    if (WiFi.status() == WL_CONNECTED) {
+      WiFiClientSecure client;
+      client.setInsecure();  // Aceita conexão sem verificar certificado
+
+      HTTPClient https;
+      https.begin(client, String("https://mytb.fabricadesoftware.ifc.edu.br/api/v1/") + token + "/telemetry");
+      https.addHeader("Content-Type", "application/json");
+
+      int httpResponseCode = https.POST(payload);
+
+      Serial.print("Resposta HTTP: ");
+      Serial.println(httpResponseCode);
+
+      https.end();
+    } else {
+      Serial.println("Wi-Fi desconectado.");
+    }
   }
 }
