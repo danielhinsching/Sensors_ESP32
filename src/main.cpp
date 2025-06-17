@@ -4,10 +4,15 @@
 #include <WiFiManager.h>
 #include <DHT.h>
 
-#define DHTPIN 33
-#define DHTTYPE DHT11
-DHT dht(DHTPIN, DHTTYPE);
+// Configuração dos sensores DHT22
+#define DHTPIN_INTERNO 18
+#define DHTPIN_EXTERNO 26
+#define DHTTYPE DHT22
 
+DHT dhtInterno(DHTPIN_INTERNO, DHTTYPE);
+DHT dhtExterno(DHTPIN_EXTERNO, DHTTYPE);
+
+// Pinos dos sensores adicionais
 const int gasAnalogPin = 39;
 const int gasDigitalPin = 4;
 const int redLed = 32;
@@ -22,12 +27,14 @@ const long interval = 2000; // 2 segundos
 void setup() {
   Serial.begin(115200);
 
+  // Configurações de pinos
   pinMode(gasAnalogPin, INPUT);
   pinMode(gasDigitalPin, INPUT);
   pinMode(redLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
   pinMode(relePin, OUTPUT);
 
+  // Conexão Wi-Fi
   WiFi.mode(WIFI_STA);
   delay(1000);
 
@@ -43,18 +50,23 @@ void setup() {
   Serial.println("✅ Wi-Fi conectado!");
   Serial.println(WiFi.localIP());
 
-  dht.begin();
+  // Inicialização dos sensores
+  dhtInterno.begin();
+  dhtExterno.begin();
 
-  // Teste inicial do sensor
-  Serial.println("Teste do sensor DHT11:");
-  float tempTeste = dht.readTemperature();
-  float humTeste = dht.readHumidity();
-  if (isnan(tempTeste) || isnan(humTeste)) {
-    Serial.println("❌ Erro inicial na leitura do sensor DHT11");
+  // Teste inicial
+  Serial.println("Teste dos sensores DHT22:");
+  float tInt = dhtInterno.readTemperature();
+  float hInt = dhtInterno.readHumidity();
+  float tExt = dhtExterno.readTemperature();
+  float hExt = dhtExterno.readHumidity();
+
+  if (isnan(tInt) || isnan(hInt) || isnan(tExt) || isnan(hExt)) {
+    Serial.println("❌ Erro ao ler um ou mais sensores DHT22");
   } else {
-    Serial.println("✅ Sensor DHT11 OK");
-    Serial.print("Temperatura: "); Serial.println(tempTeste);
-    Serial.print("Umidade: "); Serial.println(humTeste);
+    Serial.println("✅ Sensores funcionando:");
+    Serial.printf("Interno -> Temp: %.2f°C | Umid: %.2f%%\n", tInt, hInt);
+    Serial.printf("Externo -> Temp: %.2f°C | Umid: %.2f%%\n", tExt, hExt);
   }
 }
 
@@ -63,18 +75,25 @@ void loop() {
   if (now - lastMsg > interval) {
     lastMsg = now;
 
-    float temp = dht.readTemperature();
-    float hum = dht.readHumidity();
+    float tInt = dhtInterno.readTemperature();
+    float hInt = dhtInterno.readHumidity();
+    float tExt = dhtExterno.readTemperature();
+    float hExt = dhtExterno.readHumidity();
     int gasValue = analogRead(gasAnalogPin);
 
-    if (isnan(temp) || isnan(hum)) {
-      Serial.println("❌ Erro ao ler o sensor DHT11");
+    if (isnan(tInt) || isnan(hInt) || isnan(tExt) || isnan(hExt)) {
+      Serial.println("❌ Erro ao ler os sensores DHT22");
       return;
     }
 
-    String payload = "{\"temperature\":" + String(temp, 1) +
-                     ",\"humidity\":" + String(hum, 1) +
-                    //  ",\"gas\":" + String(gasValue) + "}";
+    // Payload com dados dos dois sensores
+    String payload = "{";
+    payload += "\"tempInterna\":" + String(tInt, 2) + ",";
+    payload += "\"umidInterna\":" + String(hInt, 2) + ",";
+    payload += "\"tempExterna\":" + String(tExt, 2) + ",";
+    payload += "\"umidExterna\":" + String(hExt, 2) + ",";
+    payload += "\"gas\":" + String(gasValue);
+    payload += "}";
 
     Serial.println("Publicando via HTTPS:");
     Serial.println(payload);
@@ -88,18 +107,15 @@ void loop() {
       https.addHeader("Content-Type", "application/json");
 
       int httpResponseCode = https.POST(payload);
-      Serial.print("Temperatura (°C): ");
-Serial.println(temp);
-Serial.print("Umidade (%): ");
-Serial.println(hum);
 
-
-      Serial.print("Resposta HTTP: ");
+      Serial.printf("🌡️ Interna: %.2f°C | 💧 %.2f%%\n", tInt, hInt);
+      Serial.printf("🌡️ Externa: %.2f°C | 💧 %.2f%%\n", tExt, hExt);
+      Serial.print("📡 Resposta HTTP: ");
       Serial.println(httpResponseCode);
 
       https.end();
     } else {
-      Serial.println("Wi-Fi desconectado.");
+      Serial.println("❌ Wi-Fi desconectado.");
     }
   }
 }
