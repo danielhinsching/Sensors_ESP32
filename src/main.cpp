@@ -64,56 +64,50 @@ void loop() {
   if (now - lastMsg > INTERVAL) {
     lastMsg = now;
 
-    // ==================== LEITURA DHT11 ====================
+    // ==================== LEITURA DHT1 ====================
     float t1 = dht1.readTemperature();
     float h1 = dht1.readHumidity();
+    bool dht1_ok = !(isnan(t1) || isnan(h1));
+
+    // ==================== LEITURA DHT2 ====================
     float t2 = dht2.readTemperature();
     float h2 = dht2.readHumidity();
-
-    bool dht1_ok = !(isnan(t1) || isnan(h1));
     bool dht2_ok = !(isnan(t2) || isnan(h2));
 
     // ==================== LEITURA MQ-2 ====================
     int gasAnalog = analogRead(GAS_ANALOG_PIN); 
-    float gasVoltage = gasAnalog * (5.0f / 4095.0f); // ADC 12 bits do ESP32, Vref = 5V
+    float gasVoltage = gasAnalog * (5.0f / 4095.0f);
     int gasDigital = digitalRead(GAS_DIGITAL_PIN);
+    bool alarm = (gasAnalog >= ANALOG_THRESHOLD) || (gasDigital == HIGH);
 
-    bool gas_ok = true; // assumimos sensor presente
-    bool alarmByAnalog = (gasAnalog >= ANALOG_THRESHOLD);
-    bool alarmByDigital = (gasDigital == HIGH);
-    bool alarm = alarmByAnalog || alarmByDigital;
-
-    // LEDs de status
-    if (alarm) {
-      digitalWrite(RED_LED, HIGH);
-      digitalWrite(GREEN_LED, LOW);
-    } else {
-      digitalWrite(RED_LED, LOW);
-      digitalWrite(GREEN_LED, HIGH);
-    }
-
-    // ==================== SERIAL PRINT ====================
-    Serial.println("============ 📊 LEITURA ============");
-    if (dht1_ok) Serial.printf("🌡️ DHT Interno: %.2f°C | 💧 %.2f%%\n", t1, h1);
-    if (dht2_ok) Serial.printf("🌡️ DHT Externo: %.2f°C | 💧 %.2f%%\n", t2, h2);
-    Serial.printf("🛑 Gás Analog: %d (~%.2f V) | Digital: %d | Alarme: %s\n",
-                  gasAnalog, gasVoltage, gasDigital, alarm ? "SIM 🚨" : "não");
-    Serial.println("====================================");
+    // LEDs
+    digitalWrite(GREEN_LED, !alarm);
+    digitalWrite(RED_LED, alarm);
 
     // ==================== JSON ====================
     String payload = "{";
-    if (dht1_ok) payload += "\"tempInterna\":" + String(t1,2) + ",\"umidInterna\":" + String(h1,2) + ",";
-    if (dht2_ok) payload += "\"tempExterna\":" + String(t2,2) + ",\"umidExterna\":" + String(h2,2) + ",";
+
+    if (dht1_ok) {
+      payload += "\"tempInterna\":" + String(t1, 2) + ",";
+      payload += "\"umidInterna\":" + String(h1, 2) + ",";
+    } else {
+      Serial.println("⚠️ Falha ao ler DHT interno.");
+    }
+
+    if (dht2_ok) {
+      payload += "\"tempExterna\":" + String(t2, 2) + ",";
+      payload += "\"umidExterna\":" + String(h2, 2) + ",";
+    } else {
+      Serial.println("⚠️ Falha ao ler DHT externo.");
+    }
+
     payload += "\"gasAnalog\":" + String(gasAnalog) + ",";
-    payload += "\"gasVoltage\":" + String(gasVoltage,2) + ",";
+    payload += "\"gasVoltage\":" + String(gasVoltage, 2) + ",";
     payload += "\"gasDigital\":" + String(gasDigital) + ",";
     payload += "\"alarmeGas\":" + String(alarm ? 1 : 0);
     payload += "}";
 
-    Serial.println("📡 Publicando:");
-    Serial.println(payload);
-
-    // ==================== ENVIO HTTPS ====================
+    // ==================== ENVIO ====================
     if (WiFi.status() == WL_CONNECTED) {
       WiFiClientSecure client;
       client.setInsecure();
@@ -123,12 +117,20 @@ void loop() {
       https.addHeader("Content-Type", "application/json");
 
       int httpResponseCode = https.POST(payload);
-      Serial.print("Resposta HTTP: ");
-      Serial.println(httpResponseCode);
+      Serial.printf("📡 Enviado (%d): %s\n", httpResponseCode, payload.c_str());
 
       https.end();
     } else {
-      Serial.println("❌ Wi-Fi desconectado.");
+      Serial.println("❌ Wi-Fi desconectado, não enviando dados.");
     }
+
+    // ==================== SERIAL ====================
+    Serial.println("============ 📊 LEITURA ============");
+    if (dht1_ok) Serial.printf("🌡️ DHT Interno: %.2f°C | 💧 %.2f%%\n", t1, h1);
+    if (dht2_ok) Serial.printf("🌡️ DHT Externo: %.2f°C | 💧 %.2f%%\n", t2, h2);
+    Serial.printf("🛑 Gás Analog: %d (~%.2f V) | Digital: %d | Alarme: %s\n",
+                  gasAnalog, gasVoltage, gasDigital, alarm ? "SIM 🚨" : "não");
+    Serial.println("====================================");
   }
 }
+
