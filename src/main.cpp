@@ -4,12 +4,9 @@
 #include <HTTPClient.h>
 #include <WiFiManager.h>
 #include <DHT.h>
-
-void sendTelemetry(); // protótipo da função
-
+#include "time.h"
 
 // ==================== CONFIGURAÇÕES ====================
-// DHT11
 #define DHTPIN1 5
 #define DHTPIN2 4
 #define DHTTYPE DHT11
@@ -17,34 +14,31 @@ void sendTelemetry(); // protótipo da função
 DHT dht1(DHTPIN1, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 
-// Sensor de gás MQ-2
 const int GAS_ANALOG_PIN  = 33;
 const int GAS_DIGITAL_PIN = 14;
 
-// LEDs
 const int GREEN_LED = 32;
 const int RED_LED   = 13;
 
-// ThingsBoard
 const char* token = "3xrlzmli5opwkkxuon1m";
-
-// Configurações
 const int ANALOG_THRESHOLD = 200;
-const unsigned long INTERVAL = 15UL * 60UL * 1000UL; // 15 minutos
-unsigned long lastMsg = 0;
+
+// Protótipos
+void sendTelemetry();
+void setupTime();
 
 // ==================== SETUP ====================
 void setup() {
   Serial.begin(115200);
   delay(100);
 
-  // Configuração de pinos
+  // Pinos
   pinMode(GAS_ANALOG_PIN, INPUT);
   pinMode(GAS_DIGITAL_PIN, INPUT);
   pinMode(GREEN_LED, OUTPUT);
   pinMode(RED_LED, OUTPUT);
 
-  // Conexão Wi-Fi
+  // Wi-Fi
   WiFi.mode(WIFI_STA);
   WiFiManager wm;
   wm.setTimeout(180);
@@ -53,35 +47,42 @@ void setup() {
     delay(3000);
     ESP.restart();
   }
-
   Serial.print("Wi-Fi conectado. IP: ");
   Serial.println(WiFi.localIP());
 
-  // Inicializa DHTs
+  // DHT
   dht1.begin();
   dht2.begin();
 
-  // Telemetria inicial imediata
+  // NTP
+  setupTime();
+
+  // Telemetria inicial
   sendTelemetry();
-  lastMsg = millis();
 }
 
 // ==================== LOOP ====================
 void loop() {
-  if (millis() - lastMsg >= INTERVAL) {
-    lastMsg = millis();
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  if (!localtime_r(&now, &timeinfo)) return;
+
+  // Verifica se estamos no minuto múltiplo de 15 e segundo 0
+  if (timeinfo.tm_sec == 0 && (timeinfo.tm_min % 15 == 0)) {
     sendTelemetry();
+
+    // Espera 1 segundo para não disparar múltiplas vezes
+    delay(1000);
   }
 }
 
-// ==================== FUNÇÃO DE TELEMETRIA ====================
+// ==================== TELEMETRIA ====================
 void sendTelemetry() {
-  // Leitura DHT1
+  // Leitura DHT
   float t1 = dht1.readTemperature();
   float h1 = dht1.readHumidity();
   bool dht1_ok = !(isnan(t1) || isnan(h1));
 
-  // Leitura DHT2
   float t2 = dht2.readTemperature();
   float h2 = dht2.readHumidity();
   bool dht2_ok = !(isnan(t2) || isnan(h2));
@@ -92,32 +93,29 @@ void sendTelemetry() {
   int gasDigital = digitalRead(GAS_DIGITAL_PIN);
   bool alarm = (gasAnalog >= ANALOG_THRESHOLD) || (gasDigital == HIGH);
 
-  // Atualiza LEDs
+  // LEDs
   digitalWrite(GREEN_LED, !alarm);
   digitalWrite(RED_LED, alarm);
 
-  // Monta JSON
+  // Hora atual
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+  Serial.printf("Hora atual: %02d:%02d:%02d\n",
+                timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+
+  // JSON
   String payload = "{";
-  if (dht1_ok) {
-    payload += "\"tempInterna\":" + String(t1, 2) + ",";
-    payload += "\"umidInterna\":" + String(h1, 2) + ",";
-  } else {
-    Serial.println("Falha ao ler DHT interno.");
-  }
-
-  if (dht2_ok) {
-    payload += "\"tempExterna\":" + String(t2, 2) + ",";
-    payload += "\"umidExterna\":" + String(h2, 2) + ",";
-  } else {
-    Serial.println("Falha ao ler DHT externo.");
-  }
-
+  if (dht1_ok) payload += "\"tempInterna\":" + String(t1, 2) + ",";
+  if (dht1_ok) payload += "\"umidInterna\":" + String(h1, 2) + ",";
+  if (dht2_ok) payload += "\"tempExterna\":" + String(t2, 2) + ",";
+  if (dht2_ok) payload += "\"umidExterna\":" + String(h2, 2) + ",";
   payload += "\"gasAnalog\":" + String(gasAnalog) + ",";
   payload += "\"gasVoltage\":" + String(gasVoltage, 2) + ",";
   payload += "\"gasDigital\":" + String(gasDigital) + ",";
   payload += "\"alarmeGas\":" + String(alarm ? 1 : 0) + "}";
 
-  // Envio para ThingsBoard
+  // Envio
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClientSecure client;
     client.setInsecure();
@@ -134,10 +132,32 @@ void sendTelemetry() {
     Serial.println("Wi-Fi desconectado. Não enviando dados.");
   }
 
-  // Impressão serial limpa
+  // Serial
   Serial.println("Leituras:");
   if (dht1_ok) Serial.printf("DHT Interno: %.2f C | %.2f %%\n", t1, h1);
   if (dht2_ok) Serial.printf("DHT Externo: %.2f C | %.2f %%\n", t2, h2);
   Serial.printf("Gás - Analog: %d (%.2f V) | Digital: %d | Alarme: %s\n\n",
                 gasAnalog, gasVoltage, gasDigital, alarm ? "SIM" : "NÃO");
+}
+
+// ==================== NTP ====================
+void setupTime() {
+  const char* ntpServer = "ntp.intranet.araquari.ifc.edu.br";
+  configTime(-3 * 3600, 0, ntpServer); // GMT-3 (América/São_Paulo)
+  Serial.println("Sincronizando hora via NTP...");
+
+  time_t now = time(nullptr);
+  int retries = 0;
+  while (now < 24 * 3600 && retries < 10) {
+    delay(1000);
+    Serial.print(".");
+    now = time(nullptr);
+    retries++;
+  }
+
+  if (now < 24 * 3600) {
+    Serial.println("\nFalha ao sincronizar NTP. Continuando sem hora.");
+  } else {
+    Serial.println("\nHora sincronizada via NTP (América/São_Paulo).");
+  }
 }
